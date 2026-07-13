@@ -147,6 +147,46 @@ class DumplBuilder {
             }
             return c and 0xFFFF
         }
+
+        /**
+         * Validates a raw response frame against the request it should answer.
+         *
+         * Checks magic, encoded length (must exactly match the byte count received —
+         * catches truncated/appended reads), header CRC-8, full-frame CRC-16, the
+         * response bit in cmdType, matching sequence number, reversed sender/receiver
+         * routing, and matching command set/ID. Pure function, no I/O — every check
+         * runs against the two byte arrays given.
+         *
+         * @return the response payload on success, or null on any mismatch
+         */
+        fun validateResponse(request: ByteArray, response: ByteArray): ByteArray? {
+            if (response.size < 13) return null
+            if (response[0] != 0x55.toByte()) return null
+
+            val totalLength = (response[1].toInt() and 0xFF) or ((response[2].toInt() and 0x03) shl 8)
+            if (totalLength < 13 || totalLength > 1023) return null
+            if (totalLength != response.size) return null
+
+            if (crc8(response, 0, 3) != (response[3].toInt() and 0xFF)) return null
+
+            val expectedCrc16 = crc16(response, 0, totalLength - 2)
+            val actualCrc16 = (response[totalLength - 2].toInt() and 0xFF) or
+                ((response[totalLength - 1].toInt() and 0xFF) shl 8)
+            if (expectedCrc16 != actualCrc16) return null
+
+            if (request.size < 11) return null
+
+            val cmdType = response[8].toInt() and 0xFF
+            if ((cmdType and 0x80) == 0) return null // response bit not set
+
+            if (response[6] != request[6] || response[7] != request[7]) return null // sequence
+            if (response[4] != request[5] || response[5] != request[4]) return null // reversed routing
+            if (response[9] != request[9] || response[10] != request[10]) return null // cmd set/id
+
+            val payloadLength = totalLength - 13
+            if (payloadLength <= 0) return ByteArray(0)
+            return response.copyOfRange(11, 11 + payloadLength)
+        }
     }
 }
 
@@ -245,24 +285,18 @@ class DumplTransport {
             val input = socket.getInputStream()
             val header = readBytes(input, 11) ?: return null
 
-            // Verify magic byte
+            // Verify magic byte before trusting the encoded length enough to read more
             if (header[0] != 0x55.toByte()) return null
 
-            // Extract total length from bytes 1-2 (11-bit LE)
+            // Extract total length from bytes 1-2 (11-bit LE) to know how much more to read
             val totalLength = (header[1].toInt() and 0xFF) or ((header[2].toInt() and 0x03) shl 8)
-            if (totalLength <= 13) return ByteArray(0) // no payload
-            if (totalLength > 1023) return null
+            if (totalLength < 13 || totalLength > 1023) return null
 
             // Read the rest (payload + 2 CRC bytes)
             val remaining = readBytes(input, totalLength - 11) ?: return null
+            val response = header + remaining
 
-            // Extract payload (skip 2 CRC bytes at the end)
-            val payloadLength = remaining.size - 2
-            if (payloadLength <= 0) return ByteArray(0)
-
-            val payload = ByteArray(payloadLength)
-            System.arraycopy(remaining, 0, payload, 0, payloadLength)
-            return payload
+            return DumplBuilder.validateResponse(frame, response)
 
         } catch (_: IOException) {
             return null
