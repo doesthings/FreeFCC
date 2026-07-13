@@ -13,6 +13,7 @@
     { "s": 16, "i": 88,  "d": 18,  "p": "030100",             "note": "AUTOTEST set: enter service mode (dst=SVO)" },
     { "s": 6,  "i": 114, "d": 6,   "p": "00000000000100",     "note": "RADIO set region param to FCC (01) (dst=REMOTE_RADIO)" },
     { "s": 3,  "i": 223, "d": 3,   "p": "01000000",             "note": "FLYCONTROLLER Assistant Unlock (cmd 0xDF, lock_state=1 uint32) — required before param writes" },
+    { "s": 1,  "i": 17,  "d": 3,   "p": "d100000000",           "note": "FLYCONTROLLER C0 Height Limit Unlock (sub_cmd 0xD1, realname check protocol — unlocks 120m CE cap)" },
     { "s": 3,  "i": 249, "d": 3,   "p": "8a237103b80b",       "note": "FLYCONTROLLER write max_height_0 = 3000m (ushort, cmd 0xF9)" },
     { "s": 3,  "i": 249, "d": 3,   "p": "8b237103b80b",       "note": "FLYCONTROLLER write max_height_1 = 3000m (ushort, cmd 0xF9, alternate table)" },
     { "s": 3,  "i": 249, "d": 3,   "p": "2e9bb38902",         "note": "FLYCONTROLLER write height_limit_enabled = 2 (uint8, UNLOCK MODE — disables height enforcement)" },
