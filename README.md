@@ -249,6 +249,8 @@ app/src/main/
 
 Requirements: Java 17+, Android SDK 35.
 
+### Windows
+
 ```powershell
 $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
@@ -256,6 +258,18 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 cd C:\projects\fcc_opensource
 java -classpath gradle\wrapper\gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain assembleRelease --no-daemon
 ```
+
+### macOS/Linux
+
+```bash
+export JAVA_HOME=/path/to/jdk-17
+export PATH="$JAVA_HOME/bin:$PATH"
+
+cd /path/to/FreeFCC
+./gradlew assembleRelease
+```
+
+Run the unit tests with `./gradlew testDebugUnitTest`.
 
 Sign the output APK with your own keystore or the debug one.
 
