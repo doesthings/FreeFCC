@@ -185,14 +185,14 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
                 !state.isConnected -> {
                     BodyText("Connect your drone to the controller, then power it on.")
                     Spacer(Modifier.height(20.dp))
-                    GlowButton("Connect", Cyan) { viewModel.connect() }
+                    GlowButton("Connect", Cyan, enabled = !state.isHardwareBusy) { viewModel.connect() }
                 }
                 state.isFccEnabled -> {
                     BodyText("FCC mode is active.", Green)
                     Spacer(Modifier.height(20.dp))
-                    GlowButton("Stop FCC Mode", Red) { viewModel.disableFcc() }
+                    GlowButton("Stop FCC Mode", Red, enabled = !state.isHardwareBusy) { viewModel.disableFcc() }
                     Spacer(Modifier.height(12.dp))
-                    GlowButton("Re-Apply FCC", Cyan, filled = false) { viewModel.enableFcc() }
+                    GlowButton("Re-Apply FCC", Cyan, filled = false, enabled = !state.isHardwareBusy) { viewModel.enableFcc() }
                 }
                 else -> {
                     if (state.message.isNotEmpty()) {
@@ -202,13 +202,13 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
                         BodyText("Tap the button below to enable FCC mode.")
                         Spacer(Modifier.height(20.dp))
                     }
-                    GlowButton("Enable FCC Mode", Cyan) { viewModel.enableFcc() }
+                    GlowButton("Enable FCC Mode", Cyan, enabled = !state.isHardwareBusy) { viewModel.enableFcc() }
                 }
             }
 
             if (state.aircraftSerial.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                SerialRow(state.aircraftSerial) { viewModel.probeSerial() }
+                SerialRow(state.aircraftSerial, enabled = !state.isHardwareBusy) { viewModel.probeSerial() }
             }
         }
 
@@ -250,7 +250,7 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
                     if (state.is4gBusy) {
                         ProgressDisplay(state.busyProgress, "Sending 4G activation frames...")
                     } else {
-                        GlowButton("Send 4G Activation Frames", Amber) {
+                        GlowButton("Send 4G Activation Frames", Amber, enabled = !state.isHardwareBusy) {
                             viewModel.send4gActivationFrames()
                         }
                     }
@@ -290,7 +290,7 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = { viewModel.setLed(true) },
-                    enabled = state.isConnected && !state.isLedBusy,
+                    enabled = state.isConnected && !state.isLedBusy && !state.isHardwareBusy,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Green,
                         contentColor = BgDark,
@@ -305,7 +305,7 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
                 }
                 Button(
                     onClick = { viewModel.setLed(false) },
-                    enabled = state.isConnected && !state.isLedBusy,
+                    enabled = state.isConnected && !state.isLedBusy && !state.isHardwareBusy,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.Transparent,
                         contentColor = TextGray,
@@ -398,7 +398,7 @@ private fun InfoPage(state: AppState, viewModel: FccViewModel) {
                 Text("Version Info", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 IconButton(
                     onClick = { viewModel.queryDeviceInfo() },
-                    enabled = state.isConnected && !state.isQueryingInfo,
+                    enabled = state.isConnected && !state.isQueryingInfo && !state.isHardwareBusy,
                     modifier = Modifier.size(40.dp)
                 ) {
                     if (state.isQueryingInfo) {
@@ -1021,7 +1021,7 @@ private fun BodyText(text: String, color: Color = TextGray) {
 }
 
 @Composable
-private fun SerialRow(serial: String, onRefresh: () -> Unit) {
+private fun SerialRow(serial: String, enabled: Boolean = true, onRefresh: () -> Unit) {
     Surface(
         color = BgLight.copy(0.4f),
         shape = RoundedCornerShape(10.dp),
@@ -1036,7 +1036,7 @@ private fun SerialRow(serial: String, onRefresh: () -> Unit) {
             Text("S/N: ", color = TextGray, fontSize = 12.sp)
             Text(serial, color = TextWhite, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = onRefresh, modifier = Modifier.size(24.dp)) {
+            IconButton(onClick = onRefresh, enabled = enabled, modifier = Modifier.size(24.dp)) {
                 Icon(Icons.Default.Refresh, "Refresh", tint = TextGray, modifier = Modifier.size(16.dp))
             }
         }
