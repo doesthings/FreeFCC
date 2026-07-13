@@ -27,8 +27,8 @@ data class AppState(
     val message: String = "",
     val isConnected: Boolean = false,
     val isFccEnabled: Boolean = false,
-    val is4gEnabled: Boolean = false,
     val is4gBusy: Boolean = false,
+    val fourGMessage: String = "",
     val isBusy: Boolean = false,
     val busyProgress: Float = 0f,
     val aircraftSerial: String = "",
@@ -290,18 +290,22 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
      * Sends the 128-frame 4G activation profile.
      * The aircraft serial is embedded in each frame's payload at runtime.
      * 4G frames are sent via Unix domain socket (/duss/mb/0x205), not TCP.
+     *
+     * The socket does not respond, so this can only confirm the frames were
+     * written — never confirm the aircraft actually activated 4G. There is
+     * no "off" action: no send-only command exists to reliably deactivate it.
      */
-    fun enable4g() {
-        update { copy(is4gBusy = true, busyProgress = 0f, message = "Turning 4G on...") }
-        log("Enabling 4G...")
+    fun send4gActivationFrames() {
+        update { copy(is4gBusy = true, busyProgress = 0f, fourGMessage = "") }
+        log("Sending 4G activation frames...")
 
         runOnIO {
             val serial = getOrProbeSerial()
             if (serial.isEmpty()) {
                 update {
-                    copy(is4gBusy = false, message = "4G needs the aircraft connected. Power on the drone and try again.")
+                    copy(is4gBusy = false, fourGMessage = "4G needs the aircraft connected. Power on the drone and try again.")
                 }
-                log("4G failed — no aircraft serial")
+                log("4G activation failed — no aircraft serial")
                 return@runOnIO
             }
 
@@ -315,38 +319,18 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
             ) { progress -> update { copy(busyProgress = progress) } }
 
             if (success) {
-                update { copy(is4gEnabled = true, is4gBusy = false, busyProgress = 0f, message = "4G enabled") }
-                log("4G enabled — ${profile.frames.size} frames sent via Unix socket")
+                update {
+                    copy(
+                        is4gBusy = false,
+                        busyProgress = 0f,
+                        fourGMessage = "All activation frames written successfully — check 4G status on the aircraft."
+                    )
+                }
+                log("4G activation: all ${profile.frames.size} frames written successfully via Unix socket")
             } else {
-                update { copy(is4gBusy = false, message = "4G apply failed — is the 4G dongle connected?") }
-                log("4G apply failed — Unix socket unreachable")
+                update { copy(is4gBusy = false, fourGMessage = "4G apply failed — is the 4G dongle connected?") }
+                log("4G activation failed — at least one frame write failed on the Unix socket")
             }
-        }
-    }
-
-    /** Disables 4G by re-applying FCC (keeps FCC on) or restoring CE. */
-    fun disable4g() {
-        update { copy(is4gBusy = true, message = "Turning 4G off...") }
-        log("Disabling 4G...")
-
-        runOnIO {
-            if (_state.value.isFccEnabled) {
-                val fcc = Profiles.load(app, "fcc.json")
-                transport.sendFrames(fcc.frames, 1, fcc.interFrameDelay, 0, fcc.readWindowMs)
-                log("FCC re-applied (4G off)")
-            } else {
-                val ce = Profiles.load(app, "ce_restore.json")
-                transport.sendFrames(ce.frames, 1, ce.interFrameDelay, 0, ce.readWindowMs)
-                log("CE restored (4G off)")
-            }
-            update {
-                copy(
-                    is4gEnabled = false,
-                    is4gBusy = false,
-                    message = if (isFccEnabled) "4G disabled — FCC still active" else "4G disabled — CE restored"
-                )
-            }
-            log("4G disabled")
         }
     }
 

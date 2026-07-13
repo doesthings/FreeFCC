@@ -393,25 +393,29 @@ class DumplTransport {
     /**
      * Sends a list of frames via Unix domain socket for 4G activation.
      * Fire-and-forget: no ACK read, just write and close per frame.
+     * Attempts every frame regardless of earlier failures, but only
+     * returns true if every single write succeeded.
      */
     fun sendFramesUnix(
         frames: List<ByteArray>,
         interFrameDelayMs: Long = 10,
         onProgress: (Float) -> Unit = {}
     ): Boolean {
-        var anySuccess = false
+        if (frames.isEmpty()) return false
+
+        var allSuccess = true
         val total = frames.size
         var sent = 0
 
         for (frame in frames) {
-            if (sendOneFrameUnix(frame)) {
-                anySuccess = true
+            if (!sendOneFrameUnix(frame)) {
+                allSuccess = false
             }
             sent++
             onProgress(sent.toFloat() / total)
             if (interFrameDelayMs > 0) Thread.sleep(interFrameDelayMs)
         }
-        return anySuccess
+        return allSuccess
     }
 
     private fun readBytes(input: java.io.InputStream, count: Int): ByteArray? {

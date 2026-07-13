@@ -8,7 +8,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/doesthings/FreeFCC?style=flat-square)](https://github.com/doesthings/FreeFCC/releases)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20this%20project-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white)](https://ko-fi.com/freefcc)
 
-A free and open-source Android app that unlocks FCC mode, removes altitude limits (up to 3000m), removes distance limits, disables NFZ geofencing, enables 4G transmission, and queries device info on DJI controllers. Currently only tested on the RC2. No server. No license. No tracking. Just raw DUMPL commands from JSON profile files.
+A free and open-source Android app that unlocks FCC mode, removes altitude limits (up to 3000m), removes distance limits, disables NFZ geofencing, sends 4G activation frames, and queries device info on DJI controllers. Currently only tested on the RC2. No server. No license. No tracking. Just raw DUMPL commands from JSON profile files.
 
 </div>
 
@@ -31,7 +31,7 @@ A free and open-source Android app that unlocks FCC mode, removes altitude limit
 | Feature | Description |
 |---------|-------------|
 | **FCC Unlock** | Switches the radio from CE to FCC mode for higher power and more channels |
-| **4G Activation** | Enables 4G transmission on the aircraft (serial read at runtime) |
+| **4G Activation** | Sends 4G activation frames to the aircraft (serial read at runtime) — no status readback, experimental |
 | **LED Control** | Turn aircraft arm LEDs on or off (requires DJI Fly running with aircraft connected) |
 | **Device Info** | Queries the controller for hardware and firmware version |
 | **Auto-FCC** | Toggle to automatically connect and apply FCC every time the app opens |
@@ -117,7 +117,7 @@ Swipe from the right edge to open ATV Launcher. Open the Files app, find your fo
 1. Power on the drone and link it to the controller
 2. Open FreeFCC and tap **Connect**
 3. Tap **Enable FCC Mode** and wait for the green checkmark
-4. For 4G: tap **Turn 4G ON** (the drone needs to be connected so the app can read its serial number)
+4. For 4G: tap **Send 4G Activation Frames** (the drone needs to be connected so the app can read its serial number). The app only confirms all frames were written successfully — it cannot confirm the aircraft activated 4G, since the socket doesn't respond. Check the DJI Fly app or the Cellular Dongle itself.
    > **Note:** 4G activation has not been tested on hardware yet. The frame format is based on the documented DUMPL protocol, but I have not confirmed it works in practice. If you try it, please [open an issue](https://github.com/doesthings/FreeFCC/issues) with the result.
 5. To stop: tap **Stop FCC Mode** to restore CE
 6. For LED: tap **LED ON** or **LED OFF** (requires DJI Fly running with aircraft connected)
@@ -179,9 +179,9 @@ One of the frames (frame 2) sends an Assistant Unlock command (cmd 0xDF) to the 
 
 128 frames sent in a single round with 10ms between each. Each frame carries the aircraft's serial number in its payload. The serial is read from the controller at runtime by listening for telemetry on the DUMPL socket.
 
-**How 4G activation works:**
+**How the 4G activation frames are sent:**
 
-Unlike FCC which goes through the standard DUMPL TCP proxy on port 40009, 4G frames are sent via a Unix domain socket at `/duss/mb/0x205` (abstract namespace). This is a separate DJI internal command bus that talks directly to the cellular/4G module. The app opens a new `LocalSocket` connection for each frame, writes the frame bytes, flushes, and closes. No ACK is read back since the 4G module does not respond on this socket.
+Unlike FCC which goes through the standard DUMPL TCP proxy on port 40009, 4G frames are sent via a Unix domain socket at `/duss/mb/0x205` (abstract namespace). This is a separate DJI internal command bus that talks directly to the cellular/4G module. The app opens a new `LocalSocket` connection for each frame, writes the frame bytes, flushes, and closes. No ACK is read back since the 4G module does not respond on this socket — the app can only confirm the frames were written, never that the aircraft actually activated 4G.
 
 The frame format is:
 - `sender = 2` (CAMERA)

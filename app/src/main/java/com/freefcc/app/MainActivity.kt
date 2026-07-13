@@ -226,7 +226,7 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         SignalWaveIcon(
-                            active = state.is4gEnabled,
+                            active = false,
                             color = Amber,
                             modifier = Modifier.size(28.dp)
                         )
@@ -238,26 +238,20 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
                         )
-                        if (state.is4gEnabled) {
-                            StatusDot(Green)
-                        }
                     }
                     Spacer(Modifier.height(12.dp))
                     BodyText(
-                        if (state.is4gEnabled) "4G transmission is active." else "Enable 4G transmission on the aircraft.",
-                        if (state.is4gEnabled) Green else TextGray
+                        if (state.fourGMessage.isNotEmpty()) state.fourGMessage
+                        else "Sends 4G activation frames to the aircraft. No status is read back — check the DJI Fly app or Cellular Dongle to confirm.",
+                        TextGray
                     )
                     Spacer(Modifier.height(20.dp))
 
                     if (state.is4gBusy) {
-                        ProgressDisplay(state.busyProgress, "Sending 4G frames...")
+                        ProgressDisplay(state.busyProgress, "Sending 4G activation frames...")
                     } else {
-                        GlowButton(
-                            if (state.is4gEnabled) "Turn 4G OFF" else "Turn 4G ON",
-                            Amber,
-                            filled = state.is4gEnabled
-                        ) {
-                            if (state.is4gEnabled) viewModel.disable4g() else viewModel.enable4g()
+                        GlowButton("Send 4G Activation Frames", Amber) {
+                            viewModel.send4gActivationFrames()
                         }
                     }
                 }
