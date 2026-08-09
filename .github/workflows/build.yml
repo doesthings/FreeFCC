@@ -47,7 +47,11 @@ jobs:
       contents: write
 
     env:
-      SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
+      # NOTE: runner.temp is NOT available in job-level env (only at step level),
+      # and using it here made the whole workflow file invalid — every run,
+      # including push/PR builds, failed at startup with 0 jobs created. Use
+      # github.workspace, which IS available in job-level env.
+      SIGNING_STORE_FILE: ${{ github.workspace }}/release.jks
       SIGNING_KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
       SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
       SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
