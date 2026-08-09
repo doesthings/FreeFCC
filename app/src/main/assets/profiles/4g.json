@@ -14,7 +14,7 @@
   "cmd_id_start": 0,
   "dst": 238,
   "dst_desc": "OFDM_GROUND, index 7",
-  "payload_prefix_hex": "000000",
+  "payload_prefix_hex": "000001",
   "payload_serial_encoding": "ascii",
-  "note": "Each frame's payload is: 3 zero bytes + ASCII aircraft serial. Frame i has cmd_id=i (0..127). The serial is read from the controller at runtime via probeSerial()."
+  "note": "Each frame's payload is a 3-byte prefix (00 00 01) followed by the ASCII aircraft serial; the third prefix byte is the activation flag (00 = off, 01 = on). Frame i has cmd_id=i (0..127). The serial is read from the controller at runtime via probeSerial()."
 }
