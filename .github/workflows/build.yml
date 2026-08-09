@@ -3,6 +3,7 @@ name: build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -40,7 +41,8 @@ jobs:
           if-no-files-found: error
 
   signed-release:
-    if: github.event_name == 'workflow_dispatch'
+    # Runs on a version tag push (v*) to sign + publish a release, or manually.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -94,3 +96,22 @@ jobs:
           name: release-signed-apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+
+      # On a version tag, attach the signed APK to the GitHub Release.
+      # The signed build output is named app-release.apk, so the stable URL
+      # https://github.com/doesthings/FreeFCC/releases/latest/download/app-release.apk
+      # (used by the site and the in-app updater) keeps working automatically.
+      - name: Publish signed APK to the release
+        if: startsWith(github.ref, 'refs/tags/v') && steps.secrets.outputs.have_secrets == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK" ]; then APK="$(ls app/build/outputs/apk/release/*.apk | head -1)"; fi
+          echo "Publishing $APK to release ${GITHUB_REF_NAME}"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "$APK" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "$APK" \
+              --title "${GITHUB_REF_NAME}" --generate-notes
+          fi
