@@ -68,20 +68,25 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
         const val APP_VERSION = "1.5.2"
 
         /**
-         * Aircraft model codes known to support DJI Cellular Dongle 2 / 4G.
-         * The Mini series (wa150, wa140, wm16x) does NOT support 4G — the
-         * cellular module is enterprise hardware only. Sending 4G frames to a
-         * non-4G aircraft wastes the user's time and produces a confusing
-         * "frames written but 4G didn't activate" message.
+         * Aircraft model codes *hinted* to support the DJI Cellular Dongle 2 / 4G.
          *
-         * Sources: DJI product list, captured profiles (only wa341 confirmed
-         * working on real hardware). wm630 = Inspire 3, wa341 = Mavic 4 Pro, and
-         * the wa233/wa234 Matrice-class codes accept the Cellular Dongle 2.
-         * wa140 (Mini 4 Pro) is intentionally NOT here — the Mini series has no
-         * cellular module, so it must not pass the 4G gate (previously it was
-         * both excluded in this comment and included in the set).
+         * This is ADVISORY ONLY — it is not a hard gate. Two reasons:
+         *  1. It cannot be applied reliably. probeSerial() usually returns the
+         *     full 1581… factory serial, which does not contain a W[AM]xxx model
+         *     code at all, so there is nothing here to match against.
+         *  2. The codes themselves are uncertain. Public sources disagree on what
+         *     wa233/wa234 map to, and DJI ships the Cellular Dongle 2 for the
+         *     Mini 4 Pro (wa140) with a mounting kit — contrary to the old
+         *     assumption that the Mini series has no cellular option.
+         *     Source: DJI Cellular Dongle 2 listed compatibility — Air 3,
+         *     Air 3S, Mini 4 Pro, Matrice 4T, Matrice 4E.
+         *
+         * The authoritative "can this aircraft do 4G" signal is
+         * DumlTransport.is4gDonglePresent(): if the /duss/mb/0x205 socket is
+         * connectable, a cellular module is attached. That is what actually
+         * gates activation. This set only lets us log a helpful note.
          */
-        private val MODELS_WITH_4G = setOf("wa341", "wa233", "wa234", "wm630")
+        private val MODELS_WITH_4G = setOf("wa341", "wa233", "wa234", "wm630", "wa140")
     }
 
     private val _state = MutableStateFlow(AppState())
@@ -480,16 +485,18 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
      * written — never confirm the aircraft actually activated 4G. There is
      * no "off" action: no send-only command exists to reliably deactivate it.
      *
-     * Guards (added to stop the most common failure modes early):
-     * 1. Aircraft serial must be non-empty AND at least 6 chars. A 6-char
-     *    W[AM]xxx model code (WA341, WM630) is the minimum the 4G payload
-     *    format needs — a shorter string would produce a malformed payload.
-     * 2. Model code must be in the 4G-capable set. The Mini series rejects
-     *    4G at the firmware level; we tell the user up front rather than
-     *    fail after writing 128 frames.
-     * 3. The 4G dongle must be present (the abstract socket must be
-     *    connectable). If `/duss/mb/0x205` does not exist, the cellular
-     *    module is not attached and no frame can succeed.
+     * Guards (fail fast on the common failure modes, but do not over-block):
+     * 1. Aircraft serial must be present — it is embedded in every 4G payload.
+     *    We do not reject on a specific length: the probe may return either the
+     *    full 1581… factory serial or a short W[AM]xxx model code, and both are
+     *    valid inputs to the profile builder.
+     * 2. The 4G dongle must be present — this is the AUTHORITATIVE gate. If the
+     *    abstract socket `/duss/mb/0x205` is not connectable, no cellular module
+     *    is attached and no frame can succeed, so we stop before writing 128.
+     * 3. Model code is only an advisory note. A full 1581… serial carries no
+     *    model code to check, and the code list is not reliable enough to block
+     *    on (DJI ships the Cellular Dongle 2 for the Mini 4 Pro too). If the
+     *    dongle is attached, we proceed regardless of model.
      */
     fun send4gActivationFrames() {
         if (!beginHardwareOp()) {
@@ -503,37 +510,36 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
             try {
                 val serial = getOrProbeSerial()
 
-                // Guard 1: serial present and long enough for the 4G payload format.
-                if (serial.length < 6) {
+                // Guard 1: we need *some* serial to embed in the payload.
+                if (serial.isEmpty()) {
                     update {
                         copy(is4gBusy = false, fourGMessage = "4G needs the aircraft connected. Power on the drone, link it, and tap Connect first.")
                     }
-                    log("4G activation failed — aircraft serial too short ('$serial'); need at least a W[AM]xxx model code")
+                    log("4G activation failed — no aircraft serial detected; power on the drone and tap Connect first")
                     return@runOnIO
                 }
 
-                // Guard 2: model must be in the 4G-capable set.
-                // The model code is the W[AM]xxx prefix (first 5-6 chars).
-                val modelCode = serial.take(5).lowercase()
-                if (modelCode !in MODELS_WITH_4G) {
-                    update {
-                        copy(is4gBusy = false, fourGMessage = "4G is not supported on $modelCode. It requires a DJI Cellular Dongle 2, which is only available on Mavic 4 Pro / Matrice / Inspire 3.")
-                    }
-                    log("4G activation aborted — model $modelCode is not in the 4G-capable set $MODELS_WITH_4G")
-                    return@runOnIO
+                // Advisory only: pull a W[AM]xxx model code from anywhere in the
+                // serial (a full 1581… serial won't contain one). Never blocks —
+                // the dongle probe below is the real gate.
+                val modelHint = Regex("[wW][aAmM][0-9]{3}").find(serial)?.value?.lowercase()
+                if (modelHint != null && modelHint !in MODELS_WITH_4G) {
+                    log("Note: model '$modelHint' isn't in the known-4G list, but a dongle check follows — trying anyway. If 4G doesn't activate, this aircraft may not accept the Cellular Dongle 2.")
                 }
 
-                // Guard 3: dongle pre-check — fast-fail if the socket does not exist.
+                // Guard 2 (authoritative): dongle pre-check. If the socket isn't
+                // connectable, no cellular module is attached — stop before
+                // writing 128 frames that cannot succeed.
                 if (!transport.is4gDonglePresent()) {
                     update {
-                        copy(is4gBusy = false, fourGMessage = "4G dongle not detected. Connect a DJI Cellular Dongle 2 to the aircraft and try again.")
+                        copy(is4gBusy = false, fourGMessage = "4G dongle not detected. Connect a DJI Cellular Dongle 2 to the aircraft (Mini 4 Pro also needs its 4G mounting kit) and try again.")
                     }
                     log("4G activation aborted — 4G socket /duss/mb/0x205 not connectable (no dongle?)")
                     return@runOnIO
                 }
 
                 val profile = Profiles.load4g(app, serial)
-                log("Loaded 4G profile: ${profile.frames.size} frames (serial: $serial, model: $modelCode)")
+                log("Loaded 4G profile: ${profile.frames.size} frames (serial: $serial, model: ${modelHint ?: "unknown"})")
 
                 // 4G uses Unix domain socket, not TCP
                 val success = transport.sendFramesUnix(
