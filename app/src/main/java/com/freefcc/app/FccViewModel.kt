@@ -75,11 +75,13 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
          * "frames written but 4G didn't activate" message.
          *
          * Sources: DJI product list, captured profiles (only wa341 confirmed
-         * working on real hardware). wa233/wa234 = Matrice 300/350 series,
-         * wm630 = Inspire 3, wa341 = Mavic 4 Pro. All are DJI enterprise models
-         * that ship with or accept the Cellular Dongle 2.
+         * working on real hardware). wm630 = Inspire 3, wa341 = Mavic 4 Pro, and
+         * the wa233/wa234 Matrice-class codes accept the Cellular Dongle 2.
+         * wa140 (Mini 4 Pro) is intentionally NOT here — the Mini series has no
+         * cellular module, so it must not pass the 4G gate (previously it was
+         * both excluded in this comment and included in the set).
          */
-        private val MODELS_WITH_4G = setOf("wa341", "wa233", "wa234", "wm630", "wa140")
+        private val MODELS_WITH_4G = setOf("wa341", "wa233", "wa234", "wm630")
     }
 
     private val _state = MutableStateFlow(AppState())

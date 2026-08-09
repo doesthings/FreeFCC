@@ -242,7 +242,7 @@ class DumlTransport {
      * RC link, vs ~12s with the old generous timeouts).
      *
      * @param onProgress Called with a 0..1 float as frames are sent
-     * @return true if at least one frame was written successfully
+     * @return true only if every frame write succeeded (false for an empty list)
      */
     fun sendFrames(
         frames: List<ByteArray>,
@@ -253,19 +253,22 @@ class DumlTransport {
         port: Int = PORT,
         onProgress: (Float) -> Unit = {}
     ): Boolean {
+        if (frames.isEmpty()) return false
+
         // If port is the default (40009), scan for the actual working port.
         // If port is explicitly set (e.g. 40007 for LED), use it directly.
         val effectivePort = if (port == PORT) findWorkingPort() else port
 
-        var anySuccess = false
+        // Attempt every frame regardless of earlier failures, but only report
+        // success if every single write succeeded — a partial send is a failed
+        // apply, not a success. Matches sendFramesUnix() (4G) in this file.
+        val results = mutableListOf<Boolean>()
         val totalSends = frames.size * rounds
         var sent = 0
 
         for (round in 0 until rounds) {
             for (frame in frames) {
-                if (sendOneFrame(frame, readWindowMs, effectivePort)) {
-                    anySuccess = true
-                }
+                results.add(sendOneFrame(frame, readWindowMs, effectivePort))
                 sent++
                 onProgress(sent.toFloat() / totalSends)
                 if (interFrameDelayMs > 0) Thread.sleep(interFrameDelayMs)
@@ -274,7 +277,7 @@ class DumlTransport {
                 Thread.sleep(interRoundDelayMs)
             }
         }
-        return anySuccess
+        return allFramesSucceeded(results)
     }
 
     /**
@@ -560,6 +563,15 @@ class DumlTransport {
 
         /** TCP connect timeout for all socket opens to the DUML proxy. */
         private const val CONNECT_TIMEOUT_MS = 2000
+
+        /**
+         * A frame series counts as sent only if it was non-empty and every
+         * single write succeeded. A partial send is a failed apply, not a
+         * success — this is what stops the app from reporting "FCC enabled"
+         * when the link dropped after the first of 42 writes.
+         */
+        internal fun allFramesSucceeded(results: List<Boolean>): Boolean =
+            results.isNotEmpty() && results.all { it }
     }
 
     /** Reused read buffer for ACK reads — avoids a per-frame allocation. */
