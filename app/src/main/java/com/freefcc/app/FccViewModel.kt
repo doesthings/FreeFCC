@@ -33,6 +33,8 @@ data class AppState(
     val isHardwareBusy: Boolean = false,
     val busyProgress: Float = 0f,
     val aircraftSerial: String = "",
+    val manualSerial: String = "",
+    val isProbingSerial: Boolean = false,
     val controllerModel: String = "",
     val deviceInfo: String = "",
     val isQueryingInfo: Boolean = false,
@@ -65,7 +67,7 @@ data class AppState(
 class FccViewModel(private val app: Application) : AndroidViewModel(app) {
 
     companion object {
-        const val APP_VERSION = "1.5.4"
+        const val APP_VERSION = "1.5.5"
 
         /**
          * Aircraft model codes *hinted* to support the DJI Cellular Dongle 2 / 4G.
@@ -104,9 +106,27 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         // Restore the cached aircraft serial from a previous session so the
         // user does not have to re-probe before 4G if the drone is the same.
+        // A manually-entered serial takes priority and is shown in the field.
+        val manual = prefs.getString("manual_aircraft_sn", "").orEmpty()
         val cachedSerial = prefs.getString("aircraft_serial", "").orEmpty()
-        if (cachedSerial.isNotEmpty()) {
-            update { copy(aircraftSerial = cachedSerial) }
+        val shown = if (manual.isNotEmpty()) manual else cachedSerial
+        update { copy(manualSerial = manual, aircraftSerial = shown) }
+    }
+
+    /**
+     * Stores (or clears) a manually-entered aircraft serial. A manual serial
+     * takes priority over auto-detection everywhere — the reliable fallback
+     * when the controller never surfaces the serial on its own.
+     */
+    fun setManualSerial(serial: String) {
+        val s = serial.trim().uppercase()
+        prefs.edit().putString("manual_aircraft_sn", s).apply()
+        if (s.isEmpty()) {
+            update { copy(manualSerial = "") }
+            log("Manual serial cleared — auto-detection will be used")
+        } else {
+            update { copy(manualSerial = s, aircraftSerial = s) }
+            log(if (DumlTransport.isValidSerial(s)) "Manual serial set: $s" else "Manual serial set: $s (note: unusual format)")
         }
     }
 
@@ -695,18 +715,26 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
             log("Hardware busy — please wait for the current operation to finish.")
             return
         }
-        log("Probing for aircraft serial...")
+        log("Reading aircraft serial...")
+        update { copy(isProbingSerial = true) }
         runOnIO {
             try {
-                val serial = transport.probeSerial(2000)
+                // Active query first (fast, deterministic when the aircraft is
+                // linked), then a longer passive telemetry listen as a fallback.
+                var serial = transport.probeSerialActive(800)
+                if (serial.isEmpty()) {
+                    log("No reply to the serial query — listening for telemetry (up to 8s)...")
+                    serial = transport.probeSerial(8000)
+                }
                 if (serial.isNotEmpty()) {
                     update { copy(aircraftSerial = serial) }
                     prefs.edit().putString("aircraft_serial", serial).apply()
                     log("Aircraft serial: $serial (cached)")
                 } else {
-                    log("No serial detected — is the aircraft powered on?")
+                    log("No serial detected — power on and link the aircraft with the live view up, or enter it manually.")
                 }
             } finally {
+                update { copy(isProbingSerial = false) }
                 endHardwareOp()
             }
         }
@@ -927,24 +955,39 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
         return false
     }
 
-    /** Returns the cached serial, or probes the controller if not yet known. Caches the result in SharedPreferences. */
+    /**
+     * Resolves the aircraft serial for 4G, in priority order:
+     *   1. A manually-entered serial (always wins).
+     *   2. The serial from this session / a previous session (cache).
+     *   3. An active version/serial query to the aircraft.
+     *   4. A longer passive telemetry listen.
+     * The first non-empty result is cached in SharedPreferences.
+     */
     private fun getOrProbeSerial(): String {
-        var serial = _state.value.aircraftSerial
-        if (serial.isEmpty()) {
-            // Fall back to a serial persisted in a previous session.
-            serial = prefs.getString("aircraft_serial", "").orEmpty()
-            if (serial.isNotEmpty()) {
-                update { copy(aircraftSerial = serial) }
-            }
+        // 1. Manual serial takes priority — trust exactly what the user typed,
+        //    whatever the format (do NOT re-validate; they entered it on purpose).
+        val manual = prefs.getString("manual_aircraft_sn", "").orEmpty()
+        if (manual.isNotEmpty()) {
+            update { copy(aircraftSerial = manual) }
+            return manual
         }
-        if (serial.isEmpty()) {
-            log("Probing for aircraft serial...")
-            serial = transport.probeSerial(2000)
-            if (serial.isNotEmpty()) {
-                update { copy(aircraftSerial = serial) }
-                prefs.edit().putString("aircraft_serial", serial).apply()
-                log("Aircraft serial: $serial (cached)")
-            }
+
+        // 2. Cached from this or a previous session.
+        var serial = _state.value.aircraftSerial
+        if (serial.isEmpty()) serial = prefs.getString("aircraft_serial", "").orEmpty()
+        if (serial.isNotEmpty()) {
+            update { copy(aircraftSerial = serial) }
+            return serial
+        }
+
+        // 3. Active query, then 4. longer passive listen.
+        log("Reading aircraft serial...")
+        serial = transport.probeSerialActive(800)
+        if (serial.isEmpty()) serial = transport.probeSerial(8000)
+        if (serial.isNotEmpty()) {
+            update { copy(aircraftSerial = serial) }
+            prefs.edit().putString("aircraft_serial", serial).apply()
+            log("Aircraft serial: $serial (cached)")
         }
         return serial
     }

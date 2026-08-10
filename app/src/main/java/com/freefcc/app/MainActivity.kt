@@ -312,6 +312,46 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
                         else "Sends 4G activation frames to the aircraft. No status is read back — check the DJI Fly app or Cellular Dongle to confirm.",
                         TextGray
                     )
+
+                    Spacer(Modifier.height(16.dp))
+
+                    // Aircraft serial — embedded in every 4G frame. Auto-detect
+                    // (active query, then telemetry) or type it in if detection fails.
+                    var serialField by remember(state.aircraftSerial, state.manualSerial) {
+                        mutableStateOf(state.manualSerial.ifEmpty { state.aircraftSerial })
+                    }
+                    OutlinedTextField(
+                        value = serialField,
+                        onValueChange = { serialField = it.trim() },
+                        label = { Text("Aircraft serial") },
+                        placeholder = { Text("auto-detected, or type it") },
+                        singleLine = true,
+                        enabled = !state.isHardwareBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextWhite,
+                            unfocusedTextColor = TextWhite,
+                            focusedBorderColor = Amber,
+                            unfocusedBorderColor = TextGray,
+                            focusedLabelColor = Amber,
+                            unfocusedLabelColor = TextGray,
+                            focusedPlaceholderColor = TextGray,
+                            unfocusedPlaceholderColor = TextGray,
+                            cursorColor = Amber
+                        )
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    GlowButton(
+                        if (state.isProbingSerial) "Reading serial…" else "Read serial from aircraft",
+                        Cyan, filled = false, enabled = !state.isHardwareBusy
+                    ) { viewModel.probeSerial() }
+                    if (serialField.isNotBlank() && serialField != state.manualSerial) {
+                        Spacer(Modifier.height(8.dp))
+                        GlowButton("Use this serial for 4G", Cyan, filled = false, enabled = !state.isHardwareBusy) {
+                            viewModel.setManualSerial(serialField)
+                        }
+                    }
+
                     Spacer(Modifier.height(20.dp))
 
                     if (state.is4gBusy) {
